@@ -76,7 +76,7 @@ def definingColormaps(disp=True):
     colormaps = {
         'ABI-L2-DSRF':'turbo',
         'ABI-L2-ACMF': cmaps.greys_light, # Clear Sky Mask
-        'ABI-L2-TPWF':'terrain',
+        'ABI-L2-TPWF':'Greens',
         'ABI-L2-LSTF':'jet', # Land Surface Temperature
         'ABI-L2-RRQPEF': cmaps.deep,
         "ABI-L2-ACHAF": cmaps.GMT_drywet, # Cloud Top Height
@@ -103,7 +103,7 @@ def get_image_params(data, identifier, satellite='goes16', destination_path='.\\
     # Building image name format
     img_year, img_month, img_day = str(ImgTime.year), str(ImgTime.month).zfill(2), str(ImgTime.day).zfill(2)
     img_hour, img_minute = str(ImgTime.hour).zfill(2), str(ImgTime.minute).zfill(2)
-    ImageName = '_'.join([satellite, img_year, img_month, img_day, identifier, img_hour, img_minute])+'.png'
+    ImageName = '_'.join([satellite, identifier, img_year, img_month, img_day, img_hour, img_minute])+'.png'
     ImagePath = os.path.join(destination_path,'Products',identifier)
     ImageFullPath = os.path.join(ImagePath,ImageName)
     out = {'ImgTitle': ImgTitle,
@@ -112,7 +112,7 @@ def get_image_params(data, identifier, satellite='goes16', destination_path='.\\
            'ImageName': ImageName, 'ImagePath': ImagePath, 'ImageFullPath': ImageFullPath}
     return out
 
-def GeoColorPlot(destination_path, toSave=False):
+def GeoColorPlot(destination_path, mode="latest", file_datetime=datetime.now(), toSave=False, toDisplay=True):
     """
     Plots a GeoColor image from GOES satellite data on PlateCarree projection.
 
@@ -124,24 +124,33 @@ def GeoColorPlot(destination_path, toSave=False):
         fig (matplotlib.figure.Figure): Figure object.
         ax (matplotlib.axes._subplots.GeoAxesSubplot): GeoAxesSubplot object.
     """
-    try: 
-        gFileList = g2g.data.goes_latest(satellite='noaa-goes16', product='ABI-L2-MCMIP', domain='F', download=True, save_dir=destination_path, return_as='filelist')
-        print("Getting latest available")
-    except ValueError:
-        try:
-            current_datetime = datetime.utcnow()
-            gFileList = g2g.data.goes_nearesttime(current_datetime, satellite='noaa-goes16', product='ABI-L2-MCMIP', domain='F', download=True, save_dir=destination_path, return_as='filelist')
-            print("Getting nearest available")
-        except ValueError:
-            current_datetime = datetime.utcnow() - timedelta(hours=1)
-            gFileList = g2g.data.goes_nearesttime(current_datetime, satellite='noaa-goes16', product='ABI-L2-MCMIP', domain='F', download=True, save_dir=destination_path, return_as='filelist')
-            print("Getting nearest available 1 hour before")
+    file_datetime = file_datetime.astimezone(utc).replace(tzinfo=None)
+    if(mode=="latest"):
+        try: 
+            gFileList = g2g.data.goes_latest(satellite='noaa-goes16', product='ABI-L2-MCMIP', domain='F', download=True, save_dir=destination_path, return_as='filelist')
+            print("Getting latest available")
+        except:
+            try:
+                print("Latest file available probably failed to download, rewriting existing...")
+                gFileList = g2g.data.goes_latest(satellite='noaa-goes16', product='ABI-L2-MCMIP', domain='F', download=True, save_dir=destination_path, return_as='filelist', overwrite=False)
+            except ValueError:
+                try:
+                    current_datetime = datetime.utcnow()
+                    gFileList = g2g.data.goes_nearesttime(current_datetime, satellite='noaa-goes16', product='ABI-L2-MCMIP', domain='F', download=True, save_dir=destination_path, return_as='filelist')
+                    print("Getting nearest available")
+                except ValueError:
+                    current_datetime = datetime.utcnow() - timedelta(hours=1)
+                    gFileList = g2g.data.goes_nearesttime(current_datetime, satellite='noaa-goes16', product='ABI-L2-MCMIP', domain='F', download=True, save_dir=destination_path, return_as='filelist')
+                    print("Getting nearest available 1 hour before")
+    elif(mode=="timerange"):
+        gFileList = g2g.data.goes_nearesttime(file_datetime,satellite='noaa-goes16', product='ABI-L2-MCMIP', domain='F', download=True, save_dir=destination_path, return_as='filelist')
     gdata = xr.open_dataset(os.path.join(destination_path,gFileList['file'][0]), engine='rasterio').isel(band=0)
     crs_obj = gdata.rio.crs
     crs_dest = map_proj_pc[0] # "EPSG:4326"
     GeoColorParams = get_image_params(gdata, identifier="GeoColor")
     ImgTime = GeoColorParams['ImgTime']
     isDay = (ImgTime.hour>5 and ImgTime.hour<18)
+    print(f"Plotting {ImgTime} file as geocolor.")
     fig, ax = plt.subplots(figsize=(8, 12), subplot_kw=dict(projection=map_proj_pc[0]))
     ax.set_extent(PeruLimits_deg)
     if isDay: 
@@ -166,11 +175,11 @@ def GeoColorPlot(destination_path, toSave=False):
     ax.add_geometries(gdf_peru_sea['geometry'], crs=map_proj_pc[0], facecolor='none', edgecolor=edgecolor, linewidth=0.75)
     # ax.gridlines(draw_labels=True, lw=0.75, color=gridcolor, alpha=0.7, ls='--')
     # ax.set_title("Peru image from satellite GOES\n {}".format(GeoColorParams['ImgTime_str']))
-    ax.set_title(f"{GeoColorParams['ImgTime_str']}", loc="right")
     if toSave:
         if not os.path.exists(GeoColorParams["ImagePath"]): os.makedirs(GeoColorParams["ImagePath"])
         fig.savefig(GeoColorParams["ImageFullPath"],dpi=300,bbox_inches='tight')
-    plt.show()
+    if toDisplay: plt.show()
+    else: plt.close()
     return fig, ax
 
 def ProductData(FullFilePath, product, bucket='noaa-goes16'):
@@ -185,7 +194,7 @@ def ProductData(FullFilePath, product, bucket='noaa-goes16'):
         data_re (xarray.DataArray): Processed data for the specified product.
         ProductParams (dict): Product parameters.
     """
-    isACM = isACHA = isACTP = isACHT = isLST = isRRQPE = isDSR = isDMWV = False
+    isACM = isACHA = isACTP = isACHT = isLST = isRRQPE = isDSR = isDMWV = isTPW = False
     if (product=="ABI-L2-ACMF"): isACM = True
     elif (product=="ABI-L2-ACHAF"): isACHA = True
     elif (product=="ABI-L2-ACTPF"): isACTP = True
@@ -194,6 +203,7 @@ def ProductData(FullFilePath, product, bucket='noaa-goes16'):
     elif (product=="ABI-L2-RRQPEF"): isRRQPE = True 
     elif (product=="ABI-L2-DSRF"): isDSR = True
     elif (product=="ABI-L2-DMWVF"): isDMWV = True
+    elif (product=="ABI-L2-TPWF"): isTPW = True
     identifier = product.split("-")[-1][:-1]
     
     if isDMWV:
@@ -202,7 +212,7 @@ def ProductData(FullFilePath, product, bucket='noaa-goes16'):
     else:
         data = xr.open_dataset(FullFilePath, engine='rasterio')
         ProductParams = get_image_params(data, identifier)
-        if isACHA or isACTP or isACHT or isLST or isRRQPE or isDSR: varname = ProductParams["VarNames"][0]
+        if isACHA or isACTP or isACHT or isLST or isRRQPE or isDSR or isTPW: varname = ProductParams["VarNames"][0]
         elif isACM: varname = ProductParams["VarNames"][1]
         
         data = data.isel(band=0)[varname]
@@ -233,7 +243,7 @@ def ProductPlot(data_re, product, axGeo, ProductParams, toSave=False):
     Returns:
         figProd (matplotlib.figure.Figure): The figure containing the plot.
     """
-    isACM = isACHA = isACTP = isACHT = isLST = isRRQPE = isDMWV = False
+    isACM = isACHA = isACTP = isACHT = isLST = isRRQPE = isDMWV = isTPW = False
     if (product=="ABI-L2-ACMF"): isACM = True
     elif (product=="ABI-L2-ACHAF"): isACHA = True
     elif (product=="ABI-L2-ACTPF"): isACTP = True
@@ -241,11 +251,13 @@ def ProductPlot(data_re, product, axGeo, ProductParams, toSave=False):
     elif (product=="ABI-L2-LSTF"): isLST = True
     elif (product=="ABI-L2-RRQPEF"): isRRQPE = True 
     elif (product=="ABI-L2-DMWVF"): isDMWV = True
+    elif (product=="ABI-L2-TPWF"): isTPW = True
     
     colormaps = definingColormaps(False)
     product_cmap = colormaps[product]
     
     axProd = copy.deepcopy(axGeo)
+    cbar_fontsize = 10
     if isACM or isACTP:
         flag_values = data_re.flag_values
         flag_meanings = data_re.flag_meanings.split(" ")
@@ -255,12 +267,12 @@ def ProductPlot(data_re, product, axGeo, ProductParams, toSave=False):
         cbar.set_ticks(flag_values)
         cbar.set_ticklabels(flag_meanings)
         # units_latex = re.sub(r'(\w)(-)(\d)', r'\1^{-\3}', data_re.units)
-        cbar.set_label(r"{}".format(data_re.long_name))
-    elif isACHA or isACHT or isLST or isRRQPE:
+        cbar.set_label(r"{}".format(data_re.long_name), size=cbar_fontsize)
+    elif isACHA or isACHT or isLST or isRRQPE or isTPW:
         im = axProd.pcolormesh(data_re.x, data_re.y, data_re.values, cmap=product_cmap)
         cbar = plt.colorbar(im,ax=axProd, orientation='horizontal', shrink=0.7, pad=0.01)
         units_latex = re.sub(r'(\w)(-)(\d)', r'\1^{-\3}', data_re.units)
-        cbar.set_label(r"{} $({})$".format(data_re.long_name,units_latex))
+        cbar.set_label(r"{} $({})$".format(data_re.long_name,units_latex), size=cbar_fontsize)
     elif isDMWV:
         # Convert GOES wind speed and direction to u- and v-wind components
         gu, gv = spddir_to_uv(data_re.wind_speed, data_re.wind_direction)
@@ -276,7 +288,11 @@ def ProductPlot(data_re, product, axGeo, ProductParams, toSave=False):
         )
         # axProd.gridlines(draw_labels=False, lw=0.75, color='darkgray', alpha=0.7, ls='--')
         cbar = plt.colorbar(im,ax=axProd, orientation='horizontal', shrink=1, pad=0.01)
-    
+        units_latex = re.sub(r'(\w)(-)(\d)', r'\1^{-\3}', data_re.wind_speed.units)
+        cbar.set_label(r"{} $({})$".format(data_re.wind_speed.long_name,units_latex), size=cbar_fontsize)
+    # cbar.set_label(label="asa",size=12)
+    cbar.ax.tick_params(labelsize=cbar_fontsize)
+    axProd.set_title(f"{ProductParams['ImgTime_str']}", loc="right")
     axProd.set_title(ProductParams['ImgTitle'], loc='left', fontweight='bold')
     # axProd.set_title("Peru image from satellite GOES\n {}".format(ProductParams['ImgTime_str']))
     
