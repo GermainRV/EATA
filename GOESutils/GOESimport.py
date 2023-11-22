@@ -53,12 +53,15 @@ def GOESdownload(df, local_path, overwrite=False, verbose=True):
             msg = f"\rDownloading file {filename} created on {date.strftime('%d-%b-%Y %H:%M %Z')}"
             fs.get(file, local_file)
         print(msg, end='', flush=True)
-        if keyboard.is_pressed("esc"): 
-            print("\rThe 'esc' key was pressed. Exit request gotten.")
-            exit_request = True
-            break
+        try:
+            if keyboard.is_pressed("esc"): 
+                print("\rThe 'esc' key was pressed. Exit request gotten.")
+                exit_request = True
+                break
+        except ImportError:
+                exit_request = False
         # clear_output(wait=True)
-    print(f"\rFinished downloading {len(df)} files to [{destination_path}]".ljust(2*len(msg)))
+    print(f"Finished downloading {len(df)} files to [{destination_path}]".ljust(2*len(msg)))
     
 
 def GOESfiles(mode="timerange", 
@@ -155,17 +158,25 @@ def GOESfiles(mode="timerange",
     for product in matching_products:
         dates = pd.date_range(f"{startdate:%Y-%m-%d %H:00}", f"{enddate:%Y-%m-%d %H:00}", freq="1H")         
         for date in dates:
-            print(f"\rLooking for product {product}, set of files from date {date.strftime('%d-%b-%Y %H:%M %Z')}", end='', flush=True)
-            # print("Looking for set of files from date {}".format())
-            detailed_files = fs.ls(f"{satellite}/{product}/{date:%Y/%j/%H/}", refresh=True, detail=True)
-            # clear_output(wait=True)
+            try:
+                print(f"\rLooking for product {product}, set of files from date {date.strftime('%d-%b-%Y %H:%M %Z')}", end='', flush=True)
+                detailed_files = fs.ls(f"{satellite}/{product}/{date:%Y/%j/%H/}", refresh=True, detail=True)
+            except FileNotFoundError:
+                continue
+                # date = date - timedelta(minutes=10)
+                # print(f"\rLooking for product {product}, set of files from date {date.strftime('%d-%b-%Y %H:%M %Z')}", end='', flush=True)
+                # detailed_files = fs.ls(f"{satellite}/{product}/{date:%Y/%j/%H/}", refresh=True, detail=True)
+                
             for f in detailed_files:
                 files += [f["name"]]
                 file_sizes += [f["size"]]
-            if keyboard.is_pressed("esc"): 
-                print("The 'esc' key was pressed. Exit request gotten.")
-                exit_request = True
-                break
+            try:
+                if keyboard.is_pressed("esc"): 
+                    print("The 'esc' key was pressed. Exit request gotten.")
+                    exit_request = True
+                    break
+            except ImportError:
+                exit_request = False
         if exit_request:
             break
     print("")
@@ -192,15 +203,18 @@ def GOESfiles(mode="timerange",
     if freq is not None:
         df = (df.groupby(["product", "band"])
                 .resample(freq, on='creation', origin='start').first()
+                .dropna()
                 .reset_index(level=["band", "product"], drop=True)
                 .reset_index())
     df = df[["file","start","end","creation","product","band","size"]]
     total_size_bytes = df['size'].str.extract(r'([\d.]+)').astype(float).sum(skipna=True)[0]*1024**2
-    total_size, size_units = mutl.format_file_size(total_size_bytes)
-    if download: # Downloading files requested
-        GOESdownload(df, local_path, overwrite)
+    total_size, size_units = mutl.format_value(total_size_bytes, base_unit='B', scale=1024)
     print(f"Total Size: {total_size:.2f} {size_units}")
     if to_display: display(df)
+    
+    if download: # Downloading files requested
+        GOESdownload(df, local_path, overwrite)
+    
     
     for i in params:
         df.attrs[i] = params[i]
@@ -275,6 +289,9 @@ def ImportingData(file, product):
 
 def CleaningData(data, product):
     isACM, isACHA, isACTP, isACHT, isLST, isRRQPE, isDSR, isDMWV, isTPW = _WhichProduct(product)
+    
+    # data = interpolate_products(data, product, n)
+    
     # Processing
     attributes = data.attrs 
     if isACM:
@@ -300,6 +317,35 @@ def CleaningData(data, product):
         if not isACTP:
             mask = (data.values == 0)
             data.values[mask] = np.nan
+    return data
+
+def interpolate_products(data, product, n=1):
+    isACM, isACHA, isACTP, isACHT, isLST, isRRQPE, isDSR, isDMWV, isTPW = _WhichProduct(product)
+    if n==0 or n==1:
+        print("No interpolation performed")
+    else:
+        # Interpolation
+        x, y = data.x.values, data.y.values
+        xnew, ynew = np.linspace(x[0], x[-1], num=n*len(x)), np.linspace(y[0], y[-1], num=n*len(y))
+        if isACHT or isLST: 
+            # if isLST:
+            #     for i in range(5):
+            #         data = data.interpolate_na(dim="y", method="linear", limit=1, use_coordinate=True)
+            #         data = data.interpolate_na(dim="x", method="linear", limit=1, use_coordinate=True)
+            # else: 
+            data = data.interpolate_na(dim="x", method="linear", limit=2)
+            data = data.interpolate_na(dim="y", method="linear", limit=2)
+            data = data.interp(x=xnew, y=ynew)
+        elif isACM or isACTP:
+            data = (data
+                    .fillna(0)
+                    .interp(x=xnew, y=ynew))
+            data = data.where(data >= 0, other=0)
+        else: # isACHA or isRRQPE
+            data = (data
+                    # .fillna(0)
+                    .interp(x=xnew, y=ynew))
+            data = data.where(data > 0, other=np.nan)
     return data
 
 def GeoColorData(file):

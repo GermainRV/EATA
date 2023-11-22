@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 plt.rcParams['font.family'] = 'serif'
 plt.rcParams['font.size'] = 8
 import numpy as np
-
+import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon
 import cartopy.crs as ccrs
@@ -144,7 +144,7 @@ def GeoColorPlot(RGBdata, GeoColorParams, toSave=False, toDisplay=False, toUploa
     
     for ind, row in gdf_land.iterrows():
         x_center, y_center = row.geometry.centroid.xy
-        ax.annotate(row[0], (x_center[0], y_center[0]), ha="center", va="center", bbox=dict(boxstyle="round, pad=0.2", facecolor="white", alpha=0.5))
+        ax.annotate(row.iloc[0], (x_center[0], y_center[0]), ha="center", va="center", bbox=dict(boxstyle="round, pad=0.2", facecolor="white", alpha=0.5))
     # ax.gridlines(draw_labels=True, lw=0.75, color=gridcolor, alpha=0.7, ls='--')
     ax.set_title("")
     if toSave:
@@ -338,6 +338,13 @@ def _ProductReport(data, product):
         
         report = f"{cloudy_sky_percent:.1f}% nublado, {clear_sky_percent:.1f}% despejado"
         # print(report)
+    elif("LST" in product): # LST reports
+        mean_val = np.nanmean(data)
+        max_val = np.nanmax(data)
+        min_val = np.nanmin(data)
+        report = (
+            f"Temperatura superficial mínima, promedio, y máxima (°C): {min_val:.1f}, {mean_val:.1f}, {max_val:.1f}"
+            )
     elif("RRQPE" in product): # RRQPE reports
         # Light Rain: 0.1 - 2.0 mm/hour
         # Moderate Rain: 2.1 - 10.0 mm/hour
@@ -358,6 +365,12 @@ def _ProductReport(data, product):
             rain_area_percent = (rain_area / total_area) * 100
             if rain_area_percent>0: 
                 report += [f"{rain_area_percent:.2f}% {cat}"]
+    elif("TPW" in product):
+        mean_val = np.nanmean(data.values)
+        total_val = np.nansum(data.values)*1e-3 # mm ---> m
+        total_val, unit = mutl.format_value(total_val, base_unit='m', scale=1000)
+        report = (f"Promedio de agua precipitable {mean_val:.2f}{data.unit}"
+                  f"\nAgua precipitable acumulada {total_val:.2f}{unit}")
     else:
         report = "No output"
     return report
@@ -365,20 +378,22 @@ def _ProductReport(data, product):
 def ReportingEvents(data, product, dep=None, level="L2", send_comments=False):
     reports = ""
     if level=="L1" or level=="L2":
-        reports = _ProductReport(data, product)
-        print(f"Región del Perú:\n{reports}")
+        data = data.rio.write_crs(data.goes_imager_projection.crs_wkt)
+        data_peru = data.rio.clip(gdf_states.geometry)
+        reports = _ProductReport(data_peru, product)
+        print(f"{'='*20} Producto {product}, Región del Perú {'='*20}\n{reports}")
         if send_comments:
             if("ACM" in product): dbu.SendComments("producto_cinco", reports)
             elif("RRQPE" in product): dbu.SendComments("producto_seis", reports)
     if level=="L2":
         for dep in departments:
-            print(f"{'='*20} Departamento: {dep} {'='*20}")
+            print(f"{'-'*10} Departamento: {dep} {'-'*10}")
             gdf_dep = gdf_peru_land[gdf_peru_land['NAME_1'] == dep]
             polygon_dep = gdf_dep.geometry
             data = data.rio.write_crs(data.goes_imager_projection.crs_wkt)
             data_dep = data.rio.clip(polygon_dep)
             reports = _ProductReport(data_dep, product)
-            print(f"Departamento {dep}: {reports}")
+            print(f"{reports}")
             # provinces = gdf_dep["NAME_2"].tolist()
             # if("ACM" in product): # ACM reports
             #     total_area = np.count_nonzero(~np.isnan(data_dep))
@@ -553,9 +568,9 @@ def GettingImagesInfo(ImagesPath, start_date = None, end_date = None, interval =
     ImagesNames.sort()
     df = pd.DataFrame({"Images": ImagesNames,
                    "ImagesFullPath": [os.path.join(ImagesPath, f) for f in ImagesNames]})
-    date_format = r"goes16_\w+_(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}).png"  # Define the format of the date in the file names
+    date_format = r"\w+_\w+_(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}).png"  # Define the format of the date in the file names
     df["Time"] = pd.to_datetime(df['Images'].str.extract(date_format, expand=False), format="%Y_%m_%d_%H_%M").dt.tz_localize(utcm5)#.dt.tz_convert(utc)
-    df["Product"] = df["Images"].str.extract(r'goes16_([^_]+)_\d{4}_\d{2}_\d{2}_\d{2}_\d{2}.png')
+    df["Product"] = df["Images"].str.extract(r'\w+_([^_]+)_\d{4}_\d{2}_\d{2}_\d{2}_\d{2}.png')
     df = df[["Images", "Time", "Product", "ImagesFullPath"]]
     if not (start_date is None):
         if end_date is None:
@@ -563,7 +578,7 @@ def GettingImagesInfo(ImagesPath, start_date = None, end_date = None, interval =
         df = df[(df["Time"] >= start_date) & (df["Time"] <= end_date)]
     return df
 
-def GOESvideos(ImagesInfo, VideoPath=".\\", VideoName=None, FrameRate = 5):
+def GOESvideos(ImagesInfo, VideoPath=".\\", VideoName=None, extension=".mp4", FrameRate = 6):
     
     if VideoName is None:
         product = ImagesInfo["Product"].unique()[0]
@@ -575,8 +590,8 @@ def GOESvideos(ImagesInfo, VideoPath=".\\", VideoName=None, FrameRate = 5):
         else: 
             VideoName = product + "_from_" + initial_date.strftime('%d-%b-%y') + "_to_"+final_date.strftime('%d-%b-%y')
     
-    if not VideoName.endswith(".mp4"):
-        VideoName += ".mp4"
+    if not VideoName.endswith(extension):
+        VideoName += extension
     
     ImagesList = ImagesInfo["ImagesFullPath"].tolist()
     # if not isinstance(ImagesList, list):
@@ -588,7 +603,7 @@ def GOESvideos(ImagesInfo, VideoPath=".\\", VideoName=None, FrameRate = 5):
         
     frame = cv2.imread(ImagesList[0])
     height, width, layers = frame.shape
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    fourcc = cv2.VideoWriter_fourcc(*'h264')
     video = cv2.VideoWriter(FullVideoName, fourcc, FrameRate, (width, height))
     for image in ImagesList:
         video.write(cv2.imread(image))
@@ -628,15 +643,6 @@ def QueringGeoColorTif(url):
     
     return df
 
-# out = {
-#             'FileName': data.attrs["dataset_name"],
-#             'ImageTitle': ImgTitle,
-#             'ImageTime':ImgTime, 'ImageTime_str':ImgTime_str,
-#             'VarNames':varnames, 'SpatialResolution': spatial_res,
-#             'ImageName': ImageName, 'ImagePath': ImagePath, 'FullImagePath': FullImagePath,
-#             'DataAttrs': data.attrs}
-
-
 def GeoColorTif(destination_path = './GOESimages/', mode="latest"):
     url = "https://cdn.star.nesdis.noaa.gov/GOES16/ABI/FD/GEOCOLOR/"
     if mode == "latest":
@@ -660,6 +666,28 @@ def GeoColorTif(destination_path = './GOESimages/', mode="latest"):
     
     return data_tif_peru, GeoColorParams
 
+def export_as(data, attrs, filename="data_exported.nc", path=".\\", overwrite=False):
+    """
+    Export the given data to a NetCDF file.
 
+    Parameters:
+    - data: xarray DataArray or Dataset
+    - attrs: Dictionary of attributes to set for the dataset
+    - filename: Name of the output file
+    - path: Path where the file should be saved
+    """
+    dataset = data.to_dataset()
+    dataset.attrs = attrs
+    full_name_path = os.path.join(path, filename)
+    if os.path.isfile(full_name_path) and not overwrite:
+        if overwrite:
+            os.remove(full_name_path)
+            dataset.to_netcdf(full_name_path, format='NETCDF4', mode='w')
+        else:
+            print(f"The file {filename} already exists. Do not overwrite")
+    else:    
+        dataset.to_netcdf(full_name_path, format='NETCDF4', mode='w')
+    print(f"Export successful: {full_name_path}")
+    return dataset
 
 

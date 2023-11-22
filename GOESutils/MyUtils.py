@@ -1,13 +1,6 @@
 import numpy as np
 import requests
 
-def print_progress_bar(iteration, total, bar_length=50):
-    progress = (iteration / total)
-    arrow = '=' * int(round(bar_length * progress))
-    spaces = ' ' * (bar_length - len(arrow))
-    percent = int(progress * 100)
-    print(f"\rDownloading [{arrow}{spaces}] {percent}% Complete", end='', flush=True)
-
 
 def check_internet_connection():
     try:
@@ -46,18 +39,30 @@ def interval_categorizer(data, thresholds, category_labels=None, lower_endpoint=
     if i!=n-1: print(f"There are {n-1-i} categories to be added,{i,n}")
     return out, intervals
 
+def format_value(value, base_unit='', scale=1000):
+    prefixes = {-3:'n', -2:'u', -1:'m', 0:'', 1:'K', 2:'M', 3:'G', 4:'T'}
+    scales = list(prefixes)
+    value_scale = int(np.log(np.abs(value))/np.log(scale))
+    if not value_scale in scales:
+        if value_scale < scales[0]:
+            value_scale = scales[0]
+        if value_scale > scales[0]:
+            value_scale = scales[-1]
+    unit = prefixes[value_scale]
+    value /= scale**value_scale
+    return value, unit+base_unit
+    
+def print_progress_bar(iteration, total, bar_length=50):
+    progress = (iteration / total)
+    arrow = '=' * int(round(bar_length * progress))
+    spaces = ' ' * (bar_length - len(arrow))
+    percent = int(progress * 100)
+    print(f"\rDownloading [{arrow}{spaces}] {percent}% Complete", end='', flush=True)
+
+
 def generate_hourly_dates(start_date, final_date):
     current_date = start_date
     hourly_resolution = timedelta(hours=1)
     while current_date <= final_date:
         yield current_date
         current_date += hourly_resolution
-
-
-def format_file_size(total_size_bytes):
-        units = ['B', 'KB', 'MB', 'GB', 'TB']
-        for unit in units:
-            if total_size_bytes < 1024:
-                return total_size_bytes, unit
-            total_size_bytes /= 1024
-        return total_size_bytes, units[-1]  # If the size is very large
