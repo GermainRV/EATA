@@ -42,14 +42,17 @@ def interval_categorizer(data, thresholds, category_labels=None, lower_endpoint=
 def format_value(value, base_unit='', scale=1000):
     prefixes = {-3:'n', -2:'u', -1:'m', 0:'', 1:'K', 2:'M', 3:'G', 4:'T'}
     scales = list(prefixes)
-    value_scale = int(np.log(np.abs(value))/np.log(scale))
-    if not value_scale in scales:
-        if value_scale < scales[0]:
-            value_scale = scales[0]
-        if value_scale > scales[0]:
-            value_scale = scales[-1]
-    unit = prefixes[value_scale]
-    value /= scale**value_scale
+    if value == 0:
+        unit = prefixes[0]
+    else:
+        value_scale = int(np.log(np.abs(value))/np.log(scale))
+        if not value_scale in scales:
+            if value_scale < scales[0]:
+                value_scale = scales[0]
+            if value_scale > scales[0]:
+                value_scale = scales[-1]
+        unit = prefixes[value_scale]
+        value /= scale**value_scale
     return value, unit+base_unit
     
 def print_progress_bar(iteration, total, bar_length=50):

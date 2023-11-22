@@ -16,7 +16,7 @@ fs = s3fs.S3FileSystem(anon=True)
 
 import keyboard
 from IPython.display import display
-destination_path = './GOESimages/'
+destination_path = '../GOESimages/'
 
 # Define parameter options and aliases
 # ------------------------------------
@@ -220,7 +220,7 @@ def GOESfiles(mode="timerange",
         df.attrs[i] = params[i]
     return df
 
-def GetDataParameters(data, product, image_path='./GOESimages/'):
+def GetDataParameters(data, product, image_path=destination_path):
     ImgTitle = data.attrs['title'].split("ABI L2 ")[-1]
     ImgTitle = ImgTitle.split(" - ")[0]
     format_string = '%Y-%m-%dT%H:%M:%S.%fZ'
@@ -353,7 +353,7 @@ def GeoColorData(file):
 
     crs_obj = gdata.rio.crs
     crs_dest = map_proj_pc[0] # "EPSG:4326"
-    GeoColorParams = GetDataParameters(gdata, "RGB", image_path='./GOESimages/')
+    GeoColorParams = GetDataParameters(gdata, "RGB", image_path=destination_path)
     print(f"Reading file {GeoColorParams['FileName']} as geocolor image.")
     ImageTime = GeoColorParams['ImageTime']
     isDay = (ImageTime.hour>5 and ImageTime.hour<17)

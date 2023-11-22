@@ -23,7 +23,7 @@ import GOESutils.DataBaseUtils as dbu
 import GOESutils.MyUtils as mutl
 import GOESutils.GOESimport as gimp
 from bs4 import BeautifulSoup
-
+from num2words import num2words
 from IPython.display import display, Image, clear_output
 #==================== Setting up time reference variables ====================
 utc = pytz.timezone('UTC') # UTC timezone
@@ -49,10 +49,10 @@ map_proj_pc = ccrs.PlateCarree(), "PlateCarree projection"
 PeruLimits_deg = [-85, -67.5, -20.5, 1.0] # Define the coordinates of the bounding box around Peru
 peru_box = Polygon([(PeruLimits_deg[0], PeruLimits_deg[2]), (PeruLimits_deg[1], PeruLimits_deg[2]), (PeruLimits_deg[1], PeruLimits_deg[3]), (PeruLimits_deg[0], PeruLimits_deg[3])])
 # gdf_coastline = gpd.read_file("./Boundaries/ne_10m_coastline/ne_10m_coastline.shp", mask=peru_box)
-gdf_maritime = gpd.read_file("./Boundaries/World_EEZ_v11_20191118/eez_v11.shp", mask=peru_box)
-gdf_countries = gpd.read_file("./Boundaries/ne_10m_admin_0_countries/ne_10m_admin_0_countries.shp", mask=peru_box)
-gdf_states = gpd.read_file("./Boundaries/ne_10m_admin_1_states_provinces/ne_10m_admin_1_states_provinces.shp", mask=peru_box)
-gdf_peru_land = gpd.read_file("./Boundaries/PER_adm/PER_adm2.shp")
+gdf_maritime = gpd.read_file("../Boundaries/World_EEZ_v11_20191118/eez_v11.shp", mask=peru_box)
+gdf_countries = gpd.read_file("../Boundaries/ne_10m_admin_0_countries/ne_10m_admin_0_countries.shp", mask=peru_box)
+gdf_states = gpd.read_file("../Boundaries/ne_10m_admin_1_states_provinces/ne_10m_admin_1_states_provinces.shp", mask=peru_box)
+gdf_peru_land = gpd.read_file("../Boundaries/PER_adm/PER_adm2.shp")
 # Filter the GeoDataFrame to keep only rows where adm1_code matches "PER"
 gdf_peru_sea = gdf_maritime[gdf_maritime["TERRITORY1"] == "Peru"].iloc[[1]]
 gdf_countries = gdf_countries[gdf_countries["ADMIN"] != "Peru"]
@@ -327,7 +327,6 @@ def DepartmentPlot(product, dep, RGBdata, GeoColorParams, data_re, ProductParams
             database_path = os.path.join("Images",database_folder)
             dbu.UploadFile(DepFullImageName, database_path, DepImageName)
 
-
 def _ProductReport(data, product):
     if("ACM" in product): # ACM reports
         total_area = np.count_nonzero(~np.isnan(data))
@@ -368,8 +367,11 @@ def _ProductReport(data, product):
     elif("TPW" in product):
         mean_val = np.nanmean(data.values)
         total_val = np.nansum(data.values)*1e-3 # mm ---> m
+        if np.all(np.isnan(data.values)): 
+            mean_val = 0
+            total_val = 0
         total_val, unit = mutl.format_value(total_val, base_unit='m', scale=1000)
-        report = (f"Promedio de agua precipitable {mean_val:.2f}{data.unit}"
+        report = (f"Promedio de agua precipitable {mean_val:.2f}{data.units}"
                   f"\nAgua precipitable acumulada {total_val:.2f}{unit}")
     else:
         report = "No output"
@@ -383,10 +385,13 @@ def ReportingEvents(data, product, dep=None, level="L2", send_comments=False):
         reports = _ProductReport(data_peru, product)
         print(f"{'='*20} Producto {product}, Región del Perú {'='*20}\n{reports}")
         if send_comments:
-            if("ACM" in product): dbu.SendComments("producto_cinco", reports)
-            elif("RRQPE" in product): dbu.SendComments("producto_seis", reports)
-    if level=="L2":
-        for dep in departments:
+            prod_type = definingColormaps(False)[product]["type"]
+            comments_variable = "producto_"+num2words(prod_type[-1], lang='es')
+            dbu.SendComments(comments_variable, reports)
+            # if("ACM" in product): dbu.SendComments("producto_cinco", reports)
+            # elif("RRQPE" in product): dbu.SendComments("producto_seis", reports)
+    if level=="L2" or level=="L3":
+        for i, dep in enumerate(departments):
             print(f"{'-'*10} Departamento: {dep} {'-'*10}")
             gdf_dep = gdf_peru_land[gdf_peru_land['NAME_1'] == dep]
             polygon_dep = gdf_dep.geometry
@@ -394,23 +399,21 @@ def ReportingEvents(data, product, dep=None, level="L2", send_comments=False):
             data_dep = data.rio.clip(polygon_dep)
             reports = _ProductReport(data_dep, product)
             print(f"{reports}")
-            # provinces = gdf_dep["NAME_2"].tolist()
-            # if("ACM" in product): # ACM reports
-            #     total_area = np.count_nonzero(~np.isnan(data_dep))
-            #     clear_sky_count = np.count_nonzero((data_dep.values == 0) | (data_dep.values == 1))
-            #     clear_sky_percent = clear_sky_count/total_area*100
-            #     cloudy_sky_count = np.count_nonzero((data_dep.values == 2) | (data_dep.values == 3))
-            #     cloudy_sky_percent = cloudy_sky_count/total_area*100
-            #     
-            #     for prov in provinces:
-            #         polygon_prov = gdf_dep[gdf_dep['NAME_2'] == prov].geometry
-            #         data_prov = data_dep.rio.clip(polygon_prov)
-            #         total_area_prov = np.count_nonzero(~np.isnan(data_prov))
-            #         cloudy_sky_count = np.count_nonzero((data_prov.values == 2) | (data_prov.values == 3))
-            #         cloudy_sky_percent = cloudy_sky_count/total_area_prov*100
-            #         print(f"Provincia {prov} {cloudy_sky_percent:.1f}% nublado")
-            
-                
+            if send_comments:
+                prod_type = definingColormaps(False)[product]["type"]
+                comments_variable = "producto_"+num2words(prod_type[-1], lang='es')+"_"+departments_folder[i]
+                dbu.SendComments(comments_variable, reports)
+            if level=="L3":
+                provinces = gdf_dep["NAME_2"].tolist()
+                for prov in provinces:
+                    print(f"Provincia {prov}:") 
+                    gdf_prov = gdf_dep[gdf_dep['NAME_2'] == prov]
+                    polygon_prov = gdf_prov.geometry
+                    # data = data.rio.write_crs(data.goes_imager_projection.crs_wkt)
+                    data_prov = data_dep.rio.clip(polygon_prov)
+                    reports = _ProductReport(data_prov, product)
+
+                            
             #     rain_in = []
 
             #     for prov in provinces:
@@ -435,7 +438,6 @@ def ReportingEvents(data, product, dep=None, level="L2", send_comments=False):
             #     else: print(f"No se detectó lluvia en ninguna provincia de {dep}")
     return reports
     
-
 def plotBothProjections(data,global_variables):
     variable_names = ['data','imgExtention', 'coords', 'map_proj_src','varname','product_cmap',
                       'coastlines_feature','countries_feature','map_proj_dst']
@@ -689,5 +691,3 @@ def export_as(data, attrs, filename="data_exported.nc", path=".\\", overwrite=Fa
         dataset.to_netcdf(full_name_path, format='NETCDF4', mode='w')
     print(f"Export successful: {full_name_path}")
     return dataset
-
-
