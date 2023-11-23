@@ -4,9 +4,9 @@ import datetime
 import pytz
 
 from dotenv import load_dotenv
-is_dotenv = load_dotenv(dotenv_path="GOESutils\.env") # carga variables de .env
+is_dotenv = load_dotenv(dotenv_path="..\.env") # carga variables de .env
 if not is_dotenv:
-  is_dotenv = load_dotenv(dotenv_path="GOESutils/.env")
+  is_dotenv = load_dotenv(dotenv_path="../.env")
 
 # encontrar el key.json
 key_path = 'key.json'
