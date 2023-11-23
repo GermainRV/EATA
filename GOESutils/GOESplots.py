@@ -25,10 +25,10 @@ import GOESutils.GOESimport as gimp
 from bs4 import BeautifulSoup
 from num2words import num2words
 from IPython.display import display, Image, clear_output
+destination_path = '../GOESimages/'
 #==================== Setting up time reference variables ====================
 utc = pytz.timezone('UTC') # UTC timezone
 utcm5 = pytz.timezone('America/Lima') # UTC-5 timezone
-
 #==================== Creating georeferenced variables ====================
 map_proj_pc = ccrs.PlateCarree(), "PlateCarree projection"
 # Add coastlines feature
@@ -338,9 +338,14 @@ def _ProductReport(data, product):
         report = f"{cloudy_sky_percent:.1f}% nublado, {clear_sky_percent:.1f}% despejado"
         # print(report)
     elif("LST" in product): # LST reports
-        mean_val = np.nanmean(data)
-        max_val = np.nanmax(data)
-        min_val = np.nanmin(data)
+        if np.all(np.isnan(data.values)): 
+            mean_val = np.nan
+            max_val = np.nan
+            min_val = np.nan
+        else:
+            mean_val = np.nanmean(data)
+            max_val = np.nanmax(data)
+            min_val = np.nanmin(data)
         report = (
             f"Temperatura superficial mínima, promedio, y máxima (°C): {min_val:.1f}, {mean_val:.1f}, {max_val:.1f}"
             )
@@ -363,13 +368,16 @@ def _ProductReport(data, product):
             rain_area = np.count_nonzero(~np.isnan(data_cat))
             rain_area_percent = (rain_area / total_area) * 100
             if rain_area_percent>0: 
-                report += [f"{rain_area_percent:.2f}% {cat}"]
+                # report += [f"{rain_area_percent:.2f}% {cat}"]
+                report.append(f"{rain_area_percent:.2f}% {cat}")
+        report = ", ".join(report)
     elif("TPW" in product):
-        mean_val = np.nanmean(data.values)
-        total_val = np.nansum(data.values)*1e-3 # mm ---> m
         if np.all(np.isnan(data.values)): 
             mean_val = 0
             total_val = 0
+        else:
+            mean_val = np.nanmean(data.values)
+            total_val = np.nansum(data.values)*1e-3 # mm ---> m
         total_val, unit = mutl.format_value(total_val, base_unit='m', scale=1000)
         report = (f"Promedio de agua precipitable {mean_val:.2f}{data.units}"
                   f"\nAgua precipitable acumulada {total_val:.2f}{unit}")
@@ -378,64 +386,40 @@ def _ProductReport(data, product):
     return report
 
 def ReportingEvents(data, product, dep=None, level="L2", send_comments=False):
+    data = data.rio.write_crs(data.goes_imager_projection.crs_wkt)
+    prod_type = definingColormaps(False)[product]["type"]
     reports = ""
-    if level=="L1" or level=="L2":
-        data = data.rio.write_crs(data.goes_imager_projection.crs_wkt)
+    if level=="L1" or level=="L2" or level=="L3":
         data_peru = data.rio.clip(gdf_states.geometry)
         reports = _ProductReport(data_peru, product)
         print(f"{'='*20} Producto {product}, Región del Perú {'='*20}\n{reports}")
         if send_comments:
-            prod_type = definingColormaps(False)[product]["type"]
             comments_variable = "producto_"+num2words(prod_type[-1], lang='es')
             dbu.SendComments(comments_variable, reports)
-            # if("ACM" in product): dbu.SendComments("producto_cinco", reports)
-            # elif("RRQPE" in product): dbu.SendComments("producto_seis", reports)
     if level=="L2" or level=="L3":
         for i, dep in enumerate(departments):
-            print(f"{'-'*10} Departamento: {dep} {'-'*10}")
             gdf_dep = gdf_peru_land[gdf_peru_land['NAME_1'] == dep]
             polygon_dep = gdf_dep.geometry
-            data = data.rio.write_crs(data.goes_imager_projection.crs_wkt)
             data_dep = data.rio.clip(polygon_dep)
-            reports = _ProductReport(data_dep, product)
-            print(f"{reports}")
-            if send_comments:
-                prod_type = definingColormaps(False)[product]["type"]
-                comments_variable = "producto_"+num2words(prod_type[-1], lang='es')+"_"+departments_folder[i]
-                dbu.SendComments(comments_variable, reports)
+            reports_dep = _ProductReport(data_dep, product)
+            reports_dep = "\n".join([f"{'-'*10} Departamento: {dep} {'-'*10}",
+                                    f"{reports_dep}"])
+            reports_prov = []
             if level=="L3":
                 provinces = gdf_dep["NAME_2"].tolist()
                 for prov in provinces:
-                    print(f"Provincia {prov}:") 
                     gdf_prov = gdf_dep[gdf_dep['NAME_2'] == prov]
                     polygon_prov = gdf_prov.geometry
-                    # data = data.rio.write_crs(data.goes_imager_projection.crs_wkt)
                     data_prov = data_dep.rio.clip(polygon_prov)
-                    reports = _ProductReport(data_prov, product)
-
-                            
-            #     rain_in = []
-
-            #     for prov in provinces:
-            #         polygon_prov = gdf_dep[gdf_dep['NAME_2'] == prov].geometry
-            #         data_prov = data_dep.rio.clip(polygon_prov)
-            #         there_is_rain = (np.count_nonzero(data_prov.values >= thresholds[1]) > 0)
-            #         if there_is_rain: rain_in.append(prov)
-
-            #     if (len(rain_in) > 0):
-            #         print(f"Lluvias detectadas en {', '.join(rain_in)}")
-            #         for prov in provinces:
-            #             polygon_prov = gdf_dep[gdf_dep['NAME_2'] == prov].geometry
-            #             data_prov = data_dep.rio.clip(polygon_prov)
-            #             rainfall_categories, intervals = interval_categorizer(data_prov.values, thresholds, category_labels, lower_endpoint=0)
-            #             print(f"{'-'*10}Provincia: {prov} {'-'*10}")
-            #             total_area = np.count_nonzero(~np.isnan(data_prov))
-            #             for cat in category_labels[::-1]:
-            #                 data = data_prov.where(rainfall_categories[cat]).values
-            #                 rain_area = np.count_nonzero(~np.isnan(data))
-            #                 rain_area_percent = (rain_area / total_area) * 100
-            #                 if rain_area_percent>0: print(f"{cat} {rain_area_percent:.2f}%")
-            #     else: print(f"No se detectó lluvia en ninguna provincia de {dep}")
+                    
+                    reports_prov.append("\n".join([f"Provincia {prov}:",
+                                                _ProductReport(data_prov, product)]))
+                reports_prov = "\n".join(reports_prov)
+            reports = "\n".join([reports_dep, reports_prov])
+            print(reports)
+            if send_comments:
+                comments_variable = "producto_"+num2words(prod_type[-1], lang='es')+"_"+departments_folder[i]
+                dbu.SendComments(comments_variable, reports)
     return reports
     
 def plotBothProjections(data,global_variables):
@@ -645,7 +629,7 @@ def QueringGeoColorTif(url):
     
     return df
 
-def GeoColorTif(destination_path = './GOESimages/', mode="latest"):
+def GeoColorTif(dst_path = destination_path, mode="latest"):
     url = "https://cdn.star.nesdis.noaa.gov/GOES16/ABI/FD/GEOCOLOR/"
     if mode == "latest":
         TifFilesInfo = QueringGeoColorTif(url)
@@ -660,11 +644,12 @@ def GeoColorTif(destination_path = './GOESimages/', mode="latest"):
     img_hour, img_minute = str(ImgTime.hour).zfill(2), str(ImgTime.minute).zfill(2)
     identifier = "GeoColor"
     ImageName = '_'.join([identifier, img_year, img_month, img_day, img_hour, img_minute])+'.png'
-    ImagePath = os.path.join(destination_path,'Products',identifier)
+    ImagePath = os.path.join(dst_path,'Products',identifier)
+    FullImageName = os.path.join(ImagePath, ImageName)
     GeoColorParams = dict(FileName = TifFileName, 
                           ImageTime = ImgTime,
                           ImageTime_str = ImgTime.strftime("%d-%b-%Y %H:%M %Z"),
-                          ImageName = ImageName, ImagePath = ImagePath)
+                          ImageName = ImageName, ImagePath = ImagePath, FullImageName = FullImageName)
     
     return data_tif_peru, GeoColorParams
 
