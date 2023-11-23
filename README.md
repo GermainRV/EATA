@@ -1,5 +1,3 @@
-# Public code
-
 # About Boundaries folder
 
 This folder contains the necessary shapefiles for georeferenced data in the codes, along with the download links. 
