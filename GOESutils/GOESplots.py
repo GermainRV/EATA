@@ -633,7 +633,7 @@ def GeoColorTif(dst_path = destination_path, mode="latest"):
     url = "https://cdn.star.nesdis.noaa.gov/GOES16/ABI/FD/GEOCOLOR/"
     if mode == "latest":
         TifFilesInfo = QueringGeoColorTif(url)
-        TifFile = TifFilesInfo.iloc[-1]
+        TifFile = TifFilesInfo.iloc[-2]
         TifFileName = TifFile["Filename"]
         TifFileWebFullPath = os.path.join(url, TifFileName)
         data_tif = rxr.open_rasterio(TifFileWebFullPath)
