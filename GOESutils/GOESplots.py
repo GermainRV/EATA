@@ -13,9 +13,9 @@ import xarray as xr
 import rioxarray as rxr
 from datetime import datetime, timedelta
 import pytz, time
-import os, re, copy, requests, cv2
+import os, re, copy, requests
 from unidecode import unidecode
-import goes2go as g2g
+# import goes2go as g2g
 from toolbox.wind import spddir_to_uv
 from toolbox.cartopy_tools_OLD import common_features, pc
 from paint.standard2 import cm_wind
@@ -565,7 +565,7 @@ def GettingImagesInfo(ImagesPath, start_date = None, end_date = None, interval =
     return df
 
 def GOESvideos(ImagesInfo, VideoPath=".\\", VideoName=None, extension=".mp4", FrameRate = 6):
-    
+    import cv2
     if VideoName is None:
         product = ImagesInfo["Product"].unique()[0]
         initial_date = ImagesInfo["Time"].iloc[0]
@@ -633,7 +633,7 @@ def GeoColorTif(dst_path = destination_path, mode="latest"):
     url = "https://cdn.star.nesdis.noaa.gov/GOES16/ABI/FD/GEOCOLOR/"
     if mode == "latest":
         TifFilesInfo = QueringGeoColorTif(url)
-        TifFile = TifFilesInfo.iloc[-1]
+        TifFile = TifFilesInfo.iloc[-2]
         TifFileName = TifFile["Filename"]
         TifFileWebFullPath = os.path.join(url, TifFileName)
         data_tif = rxr.open_rasterio(TifFileWebFullPath)
