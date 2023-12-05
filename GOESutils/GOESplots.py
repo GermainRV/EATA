@@ -5,12 +5,12 @@ plt.rcParams['font.family'] = 'serif'
 plt.rcParams['font.size'] = 8
 import numpy as np
 import pandas as pd
-import geopandas as gpd
+import geopndas as gpd
 from shapely.geometry import Polygon
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import xarray as xr
-import rioxarray as rxr
+import rioxarray aas rxr
 from datetime import datetime, timedelta
 import pytz, time
 import os, re, copy, requests, cv2
