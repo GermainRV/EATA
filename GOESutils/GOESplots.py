@@ -12,23 +12,21 @@ import cartopy.feature as cfeature
 import xarray as xr
 import rioxarray aas rxr
 from datetime import datetime, timedelta
-import pytz, time
-import os, re, copy, requests, cv2
+import time
+import os, re, copy, requests
 from unidecode import unidecode
-import goes2go as g2g
+# import goes2go as g2g
 from toolbox.wind import spddir_to_uv
 from toolbox.cartopy_tools_OLD import common_features, pc
 from paint.standard2 import cm_wind
 import GOESutils.DataBaseUtils as dbu
 import GOESutils.MyUtils as mutl
 import GOESutils.GOESimport as gimp
-from bs4 import BeautifulSoup
+
 from num2words import num2words
 from IPython.display import display, Image, clear_output
-destination_path = '../GOESimages/'
-#==================== Setting up time reference variables ====================
-utc = pytz.timezone('UTC') # UTC timezone
-utcm5 = pytz.timezone('America/Lima') # UTC-5 timezone
+from GOESutils.GlobalVars import *
+
 #==================== Creating georeferenced variables ====================
 map_proj_pc = ccrs.PlateCarree(), "PlateCarree projection"
 # Add coastlines feature
@@ -46,7 +44,7 @@ map_proj_pc = ccrs.PlateCarree(), "PlateCarree projection"
 #     edgecolor='black',
 #     facecolor='none')
 # Create the polygon representing the bounding box
-PeruLimits_deg = [-85, -67.5, -20.5, 1.0] # Define the coordinates of the bounding box around Peru
+
 peru_box = Polygon([(PeruLimits_deg[0], PeruLimits_deg[2]), (PeruLimits_deg[1], PeruLimits_deg[2]), (PeruLimits_deg[1], PeruLimits_deg[3]), (PeruLimits_deg[0], PeruLimits_deg[3])])
 # gdf_coastline = gpd.read_file("./Boundaries/ne_10m_coastline/ne_10m_coastline.shp", mask=peru_box)
 gdf_maritime = gpd.read_file("../Boundaries/World_EEZ_v11_20191118/eez_v11.shp", mask=peru_box)
@@ -114,7 +112,8 @@ def definingColormaps(disp=True):
         display(product_colormaps)
     return product_colormaps
     
-def GeoColorPlot(RGBdata, GeoColorParams, toSave=False, toDisplay=False, toUpload=False, department=False, dep=None, dpi=300):
+def GeoColorPlot(RGBdata, toSave=False, toDisplay=False, toUpload=False, department=False, dep=None, dpi=300):
+    GeoColorParams = RGBdata.attrs["GeoColorParams"]
     ImageTime = GeoColorParams["ImageTime"]
     print(f"Plotting geocolor image at {ImageTime}.")
     ImageTime = GeoColorParams['ImageTime']
@@ -300,9 +299,10 @@ def ProductPlot(data_re, product, axGeo, ProductParams, toSave=False, toDisplay=
     
     return figProd
 
-def DepartmentPlot(product, dep, RGBdata, GeoColorParams, data_re, ProductParams, toSave=False, toDisplay=False, toUpload=False, dpi=300):
+def DepartmentPlot(product, dep, RGBdata, data_re, ProductParams, toSave=False, toDisplay=False, toUpload=False, dpi=300):
     prod_cmap_dic = definingColormaps(False)[product]
     product_cmap = prod_cmap_dic["cmap"]
+    GeoColorParams = RGBdata.attrs["GeoColorParams"]
     
     if not (product in "ABI-L2-DMWVF"):
         bounding_box = gdf_peru_land[gdf_peru_land["NAME_1"] == dep].geometry.bounds.agg({"minx": "min", "miny": "min", "maxx": "max", "maxy": "max"})
@@ -565,7 +565,7 @@ def GettingImagesInfo(ImagesPath, start_date = None, end_date = None, interval =
     return df
 
 def GOESvideos(ImagesInfo, VideoPath=".\\", VideoName=None, extension=".mp4", FrameRate = 6):
-    
+    import cv2
     if VideoName is None:
         product = ImagesInfo["Product"].unique()[0]
         initial_date = ImagesInfo["Time"].iloc[0]
@@ -598,60 +598,6 @@ def GOESvideos(ImagesInfo, VideoPath=".\\", VideoName=None, extension=".mp4", Fr
 
     print(f"Video {VideoName} created successfully in path: '{VideoPath}'")
     
-def QueringGeoColorTif(url):
-    # Send a GET request to the URL to download the page content
-    response = requests.get(url)
-
-    if response.status_code == 200:
-        # Parse the HTML content of the page using BeautifulSoup
-        soup = BeautifulSoup(response.content, "html.parser")
-        # Extract text from the <pre> section
-        pre_text = soup.find('pre').get_text()
-        # Split the text into lines
-        lines = pre_text.split('\n')
-        # Create a list to hold the data
-        data = []
-        # Iterate through the lines and split into columns
-        for line in lines:
-            parts = line.split()
-            if len(parts) >= 4:
-                filename = parts[-4]
-                date = " ".join(parts[-3:-1])
-                size = parts[-1]
-                data.append([filename, date, int(size)/ (1024 ** 2)])
-
-        # Create a Pandas DataFrame
-        df = pd.DataFrame(data, columns=['Filename', 'Date', 'Size'])
-        df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(utc)
-        df = df[df["Filename"].str.endswith(".tif")]
-    else:
-        print("Failed to download the page. HTTP status code:", response.status_code)
-    
-    return df
-
-def GeoColorTif(dst_path = destination_path, mode="latest"):
-    url = "https://cdn.star.nesdis.noaa.gov/GOES16/ABI/FD/GEOCOLOR/"
-    if mode == "latest":
-        TifFilesInfo = QueringGeoColorTif(url)
-        TifFile = TifFilesInfo.iloc[-2]
-        TifFileName = TifFile["Filename"]
-        TifFileWebFullPath = os.path.join(url, TifFileName)
-        data_tif = rxr.open_rasterio(TifFileWebFullPath)
-        data_tif_peru = data_tif.sel(x=slice(PeruLimits_deg[0], PeruLimits_deg[1]), y=slice(PeruLimits_deg[3], PeruLimits_deg[2]))
-    
-    ImgTime = TifFile["Date"]
-    img_year, img_month, img_day = str(ImgTime.year), str(ImgTime.month).zfill(2), str(ImgTime.day).zfill(2)
-    img_hour, img_minute = str(ImgTime.hour).zfill(2), str(ImgTime.minute).zfill(2)
-    identifier = "GeoColor"
-    ImageName = '_'.join([identifier, img_year, img_month, img_day, img_hour, img_minute])+'.png'
-    ImagePath = os.path.join(dst_path,'Products',identifier)
-    FullImageName = os.path.join(ImagePath, ImageName)
-    GeoColorParams = dict(FileName = TifFileName, 
-                          ImageTime = ImgTime,
-                          ImageTime_str = ImgTime.strftime("%d-%b-%Y %H:%M %Z"),
-                          ImageName = ImageName, ImagePath = ImagePath, FullImageName = FullImageName)
-    
-    return data_tif_peru, GeoColorParams
 
 def export_as(data, attrs, filename="data_exported.nc", path=".\\", overwrite=False):
     """
