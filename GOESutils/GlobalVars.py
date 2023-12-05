@@ -3,12 +3,12 @@ product_list = { # ABI Products
 "ABI-L2-ACHAF": "Cloud Top Height",
 "ABI-L2-ACHTF": "Cloud Top Temperature",
 "ABI-L2-ACMF": "Clear Sky  Mask",
-"ABI-L2-ACTPF": "Cloud Top Phase",
+# "ABI-L2-ACTPF": "Cloud Top Phase",
 ## "ABI-L2-DMWVF": "Derived Motion Winds - Vapor",
 ## "ABI-L2-DSRF": "Downward Shortwave Radiation",
 "ABI-L2-LSTF": "Land Surface Temperature",
-"ABI-L2-RRQPEF": "Rainfall rate",
-"ABI-L2-TPWF": "Total Precipitable Water",
+# "ABI-L2-RRQPEF": "Rainfall rate",
+# "ABI-L2-TPWF": "Total Precipitable Water",
 }
 products = list(product_list)
 
