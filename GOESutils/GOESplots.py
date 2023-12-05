@@ -5,17 +5,17 @@ plt.rcParams['font.family'] = 'serif'
 plt.rcParams['font.size'] = 8
 import numpy as np
 import pandas as pd
-import geopndas as gpd
+import geopandas as gpd
 from shapely.geometry import Polygon
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import xarray as xr
-import rioxarray aas rxr
+import rioxarray as rxr
 from datetime import datetime, timedelta
 import time
 import os, re, copy, requests
 from unidecode import unidecode
-# import goes2go as g2g
+import goes2go as g2g
 from toolbox.wind import spddir_to_uv
 from toolbox.cartopy_tools_OLD import common_features, pc
 from paint.standard2 import cm_wind

@@ -366,7 +366,8 @@ def GeoColorData(file):
         for i in range(3)
     ]
     RGBdata = xr.concat([R, G, B], dim='rgb').transpose('y', 'x', 'rgb')
-    return RGBdata, GeoColorParams
+    RGBdata.attrs["GeoColorParams"] = GeoColorParams
+    return RGBdata
 
 
 
